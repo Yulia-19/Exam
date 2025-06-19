@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MindAR Куб і Сфера</title>
+
+  <!-- Бібліотеки -->
+  <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.1/dist/mindar-image-aframe.prod.js"></script>
+
+  <style>
+    #ui-panel {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.7);
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      z-index: 1000;
+    }
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      margin: 5px 0;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Панель керування -->
+<div id="ui-panel">
+  <div>Об'єм: <span id="volume">0</span></div>
+  <div>Площа: <span id="area">0</span></div>
+  <button id="combine-btn">Об'єднати фігури</button>
+  <button id="save-btn">Зберегти</button>
+  <button id="load-btn">Завантажити</button>
+</div>
+
+<!-- A-Frame сцена -->
+<a-scene mindar-image="imageTargetSrc: ../assets/markers/targets (7).mind; maxTrack: 2" 
+         color-space="sRGB"
+         renderer="colorManagement: true, physicallyCorrectLights: true"
+         vr-mode-ui="enabled: false"
+         device-orientation-permission-ui="enabled: false">
+
+  <!-- Сфера на маркері 0 -->
+  <a-entity mindar-image-target="targetIndex: 0">
+    <a-box id="sphere" color="red" radius="0.5" position="0 0.5 0"></a-box>
+  </a-entity>
+
+  <!-- Куб на маркері 1 -->
+  <a-entity mindar-image-target="targetIndex: 1">
+    <a-box id="box" color="green" position="0 0.5 0" scale="0.5 0.5 0.5"></a-box>
+  </a-entity>
+
+  <!-- Група об'єднання -->
+  <a-entity id="combined-group" visible="false"></a-entity>
+
+  <!-- Камера -->
+  <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+</a-scene>
+
+<!-- Логіка -->
+<script>
+  let combined = false;
+  let savedState = null;
+
+  const sphere = document.getElementById('sphere');
+  const box = document.getElementById('box');
+  const combinedGroup = document.getElementById('combined-group');
+
+  // Обертання об'єкта
+  function enableRotationOnClick(entity) {
+    let isRotating = false;
+    let rotation = 0;
+
+    entity.addEventListener('click', () => {
+      isRotating = !isRotating;
+      if (isRotating) rotate();
+    });
+
+    function rotate() {
+      if (!isRotating) return;
+      rotation += 1;
+      entity.setAttribute('rotation', `0 ${rotation} 0`);
+      requestAnimationFrame(rotate);
+    }
+  }
+
+  enableRotationOnClick(sphere);
+  enableRotationOnClick(box);
+
+  // Обчислення площі й об’єму
+  // Виправлена функція обчислення метрик
+//   function calculateMetrics() {
+//     let volume = 0, area = 0;
+//     const boxSize = 0.5; // сторона куба (scale 0.5 = 1x1x1 метр)
+//     const sphereRadius = 0.5; // радіус сфери
+
+//     if (combined && combinedGroup.getAttribute('visible')) {
+//       const sphereClone = combinedGroup.querySelector('#sphere-clone');
+//       const boxClone = combinedGroup.querySelector('#box-clone');
+
+//       if (sphereClone) {
+//         // Сфера: V = (4/3)πr³, S = 4πr²
+//         volume += (4/3) * Math.PI * Math.pow(sphereRadius, 3);
+//         area += 4 * Math.PI * Math.pow(sphereRadius, 2);
+//       }
+//       if (boxClone) {
+//         // Куб: V = a³, S = 6a²
+//         // Увага: scale 0.5 = 1 метр сторони (0.5 * 2)
+//         volume += Math.pow(boxSize * 2, 3); 
+//         area += 6 * Math.pow(boxSize * 2, 2);
+//       }
+//     } else {
+//       if (sphere.getAttribute('visible')) {
+//         volume += (4/3) * Math.PI * Math.pow(sphereRadius, 3);
+//         area += 4 * Math.PI * Math.pow(sphereRadius, 2);
+//       }
+//       if (box.getAttribute('visible')) {
+//         volume += Math.pow(boxSize * 2, 3);
+//         area += 6 * Math.pow(boxSize * 2, 2);
+//       }
+//     }
+
+//     document.getElementById('volume').textContent = volume.toFixed(2);
+//     document.getElementById('area').textContent = area.toFixed(2);
+//   }
+
+ function calculateMetrics() {
+    let totalVolume = 0;
+    let totalArea = 0;
+    const results = [];
+    const boxSize = 0.5 * 2; // 1 метр (оскільки базовий розмір куба в A-Frame 2x2x2)
+    const sphereRadius = 0.5;
+
+    // Перевіряємо стан кожної фігури окремо
+    if (sphere.getAttribute('visible')) {
+      const sphereVol = (4/3) * Math.PI * Math.pow(sphereRadius, 3);
+      const sphereArea = 4 * Math.PI * Math.pow(sphereRadius, 2);
+      totalVolume += sphereVol;
+      totalArea += sphereArea;
+      results.push(`Сфера: V=${sphereVol.toFixed(2)}м³, S=${sphereArea.toFixed(2)}м²`);
+    }
+
+    if (box.getAttribute('visible')) {
+      const boxVol = Math.pow(boxSize, 3);
+      const boxArea = 6 * Math.pow(boxSize, 2);
+      totalVolume += boxVol;
+      totalArea += boxArea;
+      results.push(`Куб: V=${boxVol.toFixed(2)}м³, S=${boxArea.toFixed(2)}м²`);
+    }
+
+    // Перевіряємо об'єднані фігури
+    if (combined && combinedGroup.getAttribute('visible')) {
+      const sphereClone = combinedGroup.querySelector('#sphere-clone');
+      const boxClone = combinedGroup.querySelector('#box-clone');
+
+      if (sphereClone) {
+        const sphereVol = (4/3) * Math.PI * Math.pow(sphereRadius, 3);
+        const sphereArea = 4 * Math.PI * Math.pow(sphereRadius, 2);
+        totalVolume += sphereVol;
+        totalArea += sphereArea;
+        results.push(`Сфера (група): V=${sphereVol.toFixed(2)}м³, S=${sphereArea.toFixed(2)}м²`);
+      }
+
+      if (boxClone) {
+        const boxVol = Math.pow(boxSize, 3);
+        const boxArea = 6 * Math.pow(boxSize, 2);
+        totalVolume += boxVol;
+        totalArea += boxArea;
+        results.push(`Куб (група): V=${boxVol.toFixed(2)}м³, S=${boxArea.toFixed(2)}м²`);
+      }
+    }
+
+    // Оновлюємо інтерфейс
+    document.getElementById('volume').textContent = totalVolume.toFixed(2);
+    document.getElementById('area').textContent = totalArea.toFixed(2);
+    
+    // Виводимо детальну інформацію в консоль
+    console.log(results.join('\n'));
+  }
+  // Об’єднання / роз’єднання фігур
+  document.getElementById('combine-btn').addEventListener('click', () => {
+    if (!combined) {
+      const sphereClone = sphere.cloneNode(true);
+      sphereClone.setAttribute('id', 'sphere-clone');
+      sphereClone.setAttribute('position', {x: -0.6, y: 0.5, z: 0});
+      const boxClone = box.cloneNode(true);
+      boxClone.setAttribute('id', 'box-clone');
+      boxClone.setAttribute('position', {x: 0.6, y: 0.5, z: 0});
+
+      combinedGroup.appendChild(sphereClone);
+      combinedGroup.appendChild(boxClone);
+      combinedGroup.setAttribute('visible', true);
+
+      sphere.setAttribute('visible', false);
+      box.setAttribute('visible', false);
+      combined = true;
+
+      this.textContent = "Роз'єднати фігури";
+    } else {
+      sphere.setAttribute('visible', true);
+      box.setAttribute('visible', true);
+      combinedGroup.innerHTML = '';
+      combinedGroup.setAttribute('visible', false);
+      combined = false;
+
+      this.textContent = "Об'єднати фігури";
+    }
+    calculateMetrics();
+  });
+
+  // Збереження
+  document.getElementById('save-btn').addEventListener('click', () => {
+    savedState = {
+      combined,
+      sphereVisible: sphere.getAttribute('visible'),
+      boxVisible: box.getAttribute('visible'),
+      combinedVisible: combinedGroup.getAttribute('visible')
+    };
+    localStorage.setItem('arConstruction', JSON.stringify(savedState));
+    alert('Стан збережено!');
+  });
+
+  // Завантаження
+  document.getElementById('load-btn').addEventListener('click', () => {
+    const savedData = localStorage.getItem('arConstruction');
+    if (!savedData) return alert('Немає збережених даних!');
+    savedState = JSON.parse(savedData);
+
+    sphere.setAttribute('visible', savedState.sphereVisible);
+    box.setAttribute('visible', savedState.boxVisible);
+    combinedGroup.setAttribute('visible', savedState.combinedVisible);
+    combined = savedState.combined;
+
+    document.getElementById('combine-btn').textContent =
+      combined ? "Роз'єднати фігури" : "Об'єднати фігури";
+
+    calculateMetrics();
+    alert('Стан завантажено!');
+  });
+
+// Слухачі подій розпізнавання
+const sceneEl = document.querySelector('a-scene');
+
+// Для сфери (targetIndex: 0)
+sceneEl.querySelector('[mindar-image-target="targetIndex: 0"]').addEventListener("targetFound", () => {
+  sphere.setAttribute('visible', true);
+  calculateMetrics();
+});
+sceneEl.querySelector('[mindar-image-target="targetIndex: 0"]').addEventListener("targetLost", () => {
+  sphere.setAttribute('visible', false);
+  clearMetrics();
+});
+
+// Для куба (targetIndex: 1)
+sceneEl.querySelector('[mindar-image-target="targetIndex: 1"]').addEventListener("targetFound", () => {
+  box.setAttribute('visible', true);
+  calculateMetrics();
+});
+sceneEl.querySelector('[mindar-image-target="targetIndex: 1"]').addEventListener("targetLost", () => {
+  box.setAttribute('visible', false);
+  clearMetrics();
+});
+
+// Функція очищення виводу
+function clearMetrics() {
+  const boxVisible = box.getAttribute('visible');
+  const sphereVisible = sphere.getAttribute('visible');
+  const combinedVisible = combinedGroup.getAttribute('visible');
+
+  if (!boxVisible && !sphereVisible && !combinedVisible) {
+    document.getElementById('volume').textContent = "0";
+    document.getElementById('area').textContent = "0";
+  } else {
+    calculateMetrics();
+  }
+}
+
+</script>
+</body>
+</html>
